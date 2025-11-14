@@ -37,6 +37,19 @@
         .vditor-wysiwyg h1 { font-size: 1.3em !important; }
         .vditor-wysiwyg h2 { font-size: 1.15em !important; }
         .vditor-wysiwyg h3 { font-size: 1.05em !important; }
+        /* Increase spacing in heading dropdown for easier mobile tapping */
+        .vditor-hint button {
+            padding: 12px 16px !important;
+            margin: 4px 0 !important;
+            min-height: 44px !important;
+            line-height: 1.5 !important;
+        }
+        /* Hide H4, H5, H6 buttons */
+        .vditor-hint button[data-tag="h4"],
+        .vditor-hint button[data-tag="h5"],
+        .vditor-hint button[data-tag="h6"] {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
@@ -65,7 +78,7 @@
                     'quote',
                     'list',
                     'ordered-list',
-                    'line',
+                    '|',
                     {
                         name: 'share',
                         tipPosition: 's',
