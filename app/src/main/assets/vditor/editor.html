@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- SECURITY: Content Security Policy - block external resources, allow local file access -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' file: data: blob:; img-src 'self' data: blob:; media-src 'none'; connect-src 'self' file:; object-src 'none'; frame-src 'none';">
+    <title>Markdown Editor</title>
+    <link rel="stylesheet" href="vditor.min.css">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+        }
+        #vditor {
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+        /* Compact styling for mobile */
+        .vditor {
+            font-size: 13px !important;
+        }
+        .vditor-wysiwyg {
+            font-size: 13px !important;
+            line-height: 1.5 !important;
+        }
+        /* Reduce heading sizes */
+        .vditor-wysiwyg h1 { font-size: 1.3em !important; }
+        .vditor-wysiwyg h2 { font-size: 1.15em !important; }
+        .vditor-wysiwyg h3 { font-size: 1.05em !important; }
+    </style>
+</head>
+<body>
+    <div id="vditor"></div>
+    
+    <script src="vditor.min.js"></script>
+    <!-- Pre-load files to avoid XHR -->
+    <script src="dist/js/i18n/en_US.js"></script>
+    <script src="dist/js/icons/ant.js"></script>
+    <script>
+        try {
+            const vditor = new Vditor('vditor', {
+                height: '100%',
+                mode: 'wysiwyg',  // WYSIWYG mode
+                placeholder: 'Type your notes here...',
+                theme: 'classic',
+                icon: 'ant',  // Use ant icons instead of material (no XHR needed)
+                toolbarConfig: {
+                    pin: true,
+                    hide: false
+                },
+                toolbar: [
+                    'headings',
+                    'bold',
+                    'italic',
+                    'quote',
+                    'list',
+                    'ordered-list',
+                    'line',
+                    {
+                        name: 'share',
+                        tipPosition: 's',
+                        tip: 'Share',
+                        className: 'right',
+                        icon: '<svg><use xlink:href="#vditor-icon-export"></use></svg>',
+                        click: () => {
+                            if (window.Android) {
+                                window.Android.onShareClicked();
+                            }
+                        }
+                    }
+                ],
+                counter: {
+                    enable: false
+                },
+                cache: {
+                    enable: false
+                },
+                // SECURITY: Disable file uploads
+                upload: {
+                    handler: () => {
+                        return null;
+                    }
+                },
+                // English language file pre-loaded above
+                lang: 'en_US',
+                // SECURITY: Use local asset path as CDN to prevent external resource loading
+                cdn: 'file:///android_asset/vditor',
+                // SECURITY: Disable link references that could load external content
+                preview: {
+                    markdown: {
+                        autoSpace: true,
+                        linkBase: '',
+                        linkPrefix: '',
+                        sanitize: false  // User-generated content, no XSS risk for self
+                    },
+                    // Disable external media rendering
+                    media: {
+                        enable: false
+                    }
+                },
+                // Disable hint/autocomplete that might need external resources
+                hint: {
+                    delay: 0,
+                    emoji: {},
+                    emojiPath: ''
+                },
+                after: () => {
+                    // Editor ready notification
+                    if (window.Android) {
+                        window.Android.onEditorReady();
+                    }
+                    
+                    // Focus the editor
+                    setTimeout(() => {
+                        vditor.focus();
+                    }, 300);
+                },
+                input: (value) => {
+                    // Content change notification
+                    if (window.Android) {
+                        window.Android.onContentChanged();
+                    }
+                }
+            });
+            
+            // JavaScript bridge interface
+            window.EditorBridge = {
+                getMarkdown: function() {
+                    return vditor.getValue();
+                },
+                
+                setMarkdown: function(markdown) {
+                    if (markdown) {
+                        vditor.setValue(markdown);
+                    }
+                },
+                
+                initWithHeader: function(area, group) {
+                    const header = '# ' + area + ' ' + group + '\n\n';
+                    vditor.setValue(header);
+                    // Move cursor to end
+                    setTimeout(() => {
+                        vditor.focus();
+                    }, 100);
+                }
+            };
+            
+            // Expose vditor globally
+            window.vditor = vditor;
+            
+        } catch (error) {
+            console.error('Editor initialization error:', error);
+        }
+    </script>
+</body>
+</html>
+

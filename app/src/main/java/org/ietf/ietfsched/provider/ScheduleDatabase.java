@@ -48,8 +48,9 @@ public class ScheduleDatabase extends SQLiteOpenHelper {
     private static final int VER_LAUNCH = 21;
     private static final int VER_SESSION_FEEDBACK_URL = 22;
     private static final int VER_SESSION_NOTES_URL_SLUG = 28;
+    private static final int VER_SESSION_USER_NOTES = 29;
 
-    private static final int DATABASE_VERSION = VER_SESSION_NOTES_URL_SLUG;
+    private static final int DATABASE_VERSION = VER_SESSION_USER_NOTES;
 
     interface Tables {
         String BLOCKS = "blocks";
@@ -176,6 +177,7 @@ public class ScheduleDatabase extends SQLiteOpenHelper {
                 + SessionsColumns.SESSION_FEEDBACK_URL + " TEXT,"
                 + SessionsColumns.SESSION_NOTES_URL + " TEXT,"
                 + SessionsColumns.SESSION_STARRED + " INTEGER NOT NULL DEFAULT 0,"
+                + SessionsColumns.SESSION_USER_NOTES + " TEXT,"
                 + "UNIQUE (" + SessionsColumns.SESSION_ID + ") ON CONFLICT REPLACE)");
 
         db.execSQL("CREATE TABLE " + Tables.SESSIONS_TRACKS + " ("
@@ -247,6 +249,9 @@ public class ScheduleDatabase extends SQLiteOpenHelper {
         switch (oldVersion) {
             case VER_LAUNCH:
             case VER_SESSION_FEEDBACK_URL:
+            case VER_SESSION_NOTES_URL_SLUG:
+                db.execSQL("ALTER TABLE " + Tables.SESSIONS +
+                    " ADD COLUMN " + SessionsColumns.SESSION_USER_NOTES + " TEXT");
 		}
 
         Log.d(TAG, "after upgrade logic, at version " + oldVersion);

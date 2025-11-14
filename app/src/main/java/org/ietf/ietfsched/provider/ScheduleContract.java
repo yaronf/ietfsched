@@ -118,6 +118,8 @@ public class ScheduleContract {
         String SESSION_NOTES_URL = "session_notes_url";
         /** User-specific flag indicating starred status. */
         String SESSION_STARRED = "session_starred";
+        /** User-generated markdown notes for this session. */
+        String SESSION_USER_NOTES = "session_user_notes";
     }
 
     interface SpeakersColumns {

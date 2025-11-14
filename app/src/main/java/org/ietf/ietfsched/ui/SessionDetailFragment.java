@@ -97,6 +97,11 @@ public class SessionDetailFragment extends Fragment implements
     private boolean mSessionCursor = false;
     private boolean mSpeakersCursor = false;
     private boolean mHasSummaryContent = false;
+    
+    // Markdown editor
+    private MarkdownEditorWebView mMarkdownEditor;
+    private String mUserNotes;
+    private boolean mEditorInitialized = false;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -117,7 +122,6 @@ public class SessionDetailFragment extends Fragment implements
     @Override
    	public void onResume() {	
         super.onResume();
-        updateNotesTab();
 
         // Start listening for time updates to adjust "now" bar. TIME_TICK is
         // triggered once per minute, which is how we move the bar over time.
@@ -133,6 +137,8 @@ public class SessionDetailFragment extends Fragment implements
     public void onPause() {
         super.onPause();
         getActivity().unregisterReceiver(mPackageChangesReceiver);
+        // Auto-save notes
+        saveUserNotes();
     }
 
     @Override
@@ -244,7 +250,7 @@ public class SessionDetailFragment extends Fragment implements
     private void onSessionQueryComplete(Cursor cursor) {
         try {
             mSessionCursor = true;
-            if (!cursor.moveToFirst()) {
+            if (cursor == null || !cursor.moveToFirst()) {
                 return;
             }
 
@@ -305,6 +311,12 @@ public class SessionDetailFragment extends Fragment implements
                 mAbstract.setVisibility(View.GONE);
             }
 
+            // Load user notes for markdown editor
+            mUserNotes = cursor.getString(SessionsQuery.USER_NOTES);
+            if (mEditorInitialized) {
+                initializeNotesContent();
+            }
+
             // Show empty message when all data is loaded, and nothing to show
 			if (!mHasSummaryContent) {
 					mRootView.findViewById(android.R.id.empty).setVisibility(View.VISIBLE);
@@ -314,10 +326,11 @@ public class SessionDetailFragment extends Fragment implements
 			}
 
             updateLinksTab(cursor);
-            updateNotesTab();
 
         } finally {
-            cursor.close();
+            if (cursor != null) {
+                cursor.close();
+            }
         }
     }
 
@@ -385,15 +398,67 @@ public class SessionDetailFragment extends Fragment implements
     /**
      * Build and add "notes" tab.
      */
-    private void setupNotesTab() {
-        // Make powered-by clickable
-        ((TextView) mRootView.findViewById(R.id.notes_powered_by)).setMovementMethod(
-                LinkMovementMethod.getInstance());
+    /**
+     * Extract area and group from session title.
+     * Title format: "area - group - meeting_title"
+     * Example: "SEC - oauth - OAuth 2.0 Security" -> ["SEC", "oauth"]
+     */
+    private String[] extractAreaAndGroup(String title) {
+        if (title == null) {
+            return new String[]{"", ""};
+        }
+        
+        String[] parts = title.split(" - ", 3);
+        if (parts.length >= 2) {
+            return new String[]{parts[0].trim(), parts[1].trim()};
+        }
+        
+        return new String[]{"", ""};
+    }
 
+    private void setupNotesTab() {
+        mMarkdownEditor = mRootView.findViewById(R.id.tab_session_notes);
+        
+        // Listen for editor events
+        mMarkdownEditor.setEditorListener(new MarkdownEditorWebView.EditorListener() {
+            @Override
+            public void onEditorReady() {
+                mEditorInitialized = true;
+                initializeNotesContent();
+            }
+            
+            @Override
+            public void onContentChanged() {
+                // Content changed - auto-save could be triggered here if needed
+            }
+            
+            @Override
+            public void onShareClicked() {
+                // Share button in Vditor toolbar clicked
+                shareNotes();
+            }
+        });
+        
         // Setup tab
         mTabHost.addTab(mTabHost.newTabSpec(TAG_NOTES)
                 .setIndicator(buildIndicator(R.string.session_notes))
                 .setContent(R.id.tab_session_notes));
+        
+        // Focus editor when Notes tab is selected
+        mTabHost.setOnTabChangedListener(new TabHost.OnTabChangeListener() {
+            @Override
+            public void onTabChanged(String tabId) {
+                if (TAG_NOTES.equals(tabId) && mMarkdownEditor != null) {
+                    mMarkdownEditor.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            mMarkdownEditor.requestFocus();
+                            mMarkdownEditor.focusEditor();
+                        }
+                    }, 300);
+                }
+            }
+        });
     }
 
     /*
@@ -416,64 +481,60 @@ public class SessionDetailFragment extends Fragment implements
     public void fireLinkEvent(int actionId) {
     }
 
-    private void updateNotesTab() {
-        final CatchNotesHelper helper = new CatchNotesHelper(getActivity());
-        final boolean notesInstalled = helper.isNotesInstalledAndMinimumVersion();
-
-        final Intent marketIntent = helper.notesMarketIntent();
-        final Intent newIntent = helper.createNoteIntent(
-                getString(R.string.note_template, mTitleString, getHashtagsString()));
+    /**
+     * Initialize notes content with H1 header or load existing notes.
+     */
+    private void initializeNotesContent() {
+        if (!mEditorInitialized) return;
         
-        final Intent viewIntent = helper.viewNotesIntent(getHashtagsString());
+        String[] areaGroup = extractAreaAndGroup(mTitleString);
+        
+        if (mUserNotes == null || mUserNotes.isEmpty()) {
+            // New note: initialize with H1 header
+            mMarkdownEditor.initWithHeader(areaGroup[0], areaGroup[1]);
+        } else {
+            // Load existing note
+            mMarkdownEditor.setMarkdown(mUserNotes);
+        }
+    }
 
-        // Set icons and click listeners
-        ((ImageView) mRootView.findViewById(R.id.notes_catch_market_icon)).setImageDrawable(
-                UIUtils.getIconForIntent(getActivity(), marketIntent));
-        ((ImageView) mRootView.findViewById(R.id.notes_catch_new_icon)).setImageDrawable(
-                UIUtils.getIconForIntent(getActivity(), newIntent));
-        ((ImageView) mRootView.findViewById(R.id.notes_catch_view_icon)).setImageDrawable(
-                UIUtils.getIconForIntent(getActivity(), viewIntent));
+    /**
+     * Save user notes to database.
+     */
+    private void saveUserNotes() {
+        if (!mEditorInitialized || mMarkdownEditor == null) return;
+        
+        mMarkdownEditor.getMarkdown(markdown -> {
+            ContentValues values = new ContentValues();
+            values.put(ScheduleContract.Sessions.SESSION_USER_NOTES, markdown);
+            mHandler.startUpdate(mSessionUri, values);
+            Log.d(TAG, "Saved user notes for session: " + mSessionId);
+        });
+    }
 
-        // Set click listeners
-        mRootView.findViewById(R.id.notes_catch_market_link).setOnClickListener(
-                new View.OnClickListener() {
-                    public void onClick(View view) {
-                        startActivity(marketIntent);
-                        fireNotesEvent(R.string.notes_catch_market_title);
-                    }
-                });
-
-        mRootView.findViewById(R.id.notes_catch_new_link).setOnClickListener(
-                new View.OnClickListener() {
-                    public void onClick(View view) {
-                        startActivity(newIntent);
-                        fireNotesEvent(R.string.notes_catch_new_title);
-                    }
-                });
-
-        mRootView.findViewById(R.id.notes_catch_view_link).setOnClickListener(
-                new View.OnClickListener() {
-                    public void onClick(View view) {
-                        startActivity(viewIntent);
-                        fireNotesEvent(R.string.notes_catch_view_title);
-                    }
-                });
-
-        // Show/hide elements
-        mRootView.findViewById(R.id.notes_catch_market_link).setVisibility(
-                notesInstalled ? View.GONE : View.VISIBLE);
-        mRootView.findViewById(R.id.notes_catch_market_separator).setVisibility(
-                notesInstalled ? View.GONE : View.VISIBLE);
-
-        mRootView.findViewById(R.id.notes_catch_new_link).setVisibility(
-                !notesInstalled ? View.GONE : View.VISIBLE);
-        mRootView.findViewById(R.id.notes_catch_new_separator).setVisibility(
-                !notesInstalled ? View.GONE : View.VISIBLE);
-
-        mRootView.findViewById(R.id.notes_catch_view_link).setVisibility(
-                !notesInstalled ? View.GONE : View.VISIBLE);
-        mRootView.findViewById(R.id.notes_catch_view_separator).setVisibility(
-                !notesInstalled ? View.GONE : View.VISIBLE);
+    /**
+     * Share notes as plain text markdown.
+     */
+    private void shareNotes() {
+        if (!mEditorInitialized) return;
+        
+        mMarkdownEditor.getMarkdown(markdown -> {
+            if (markdown == null || markdown.trim().isEmpty()) {
+                android.widget.Toast.makeText(getActivity(), "No notes to share", 
+                    android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+            
+            String[] areaGroup = extractAreaAndGroup(mTitleString);
+            String subject = String.format("IETF Notes: %s %s", areaGroup[0], areaGroup[1]);
+            
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.setType("text/plain");
+            intent.putExtra(Intent.EXTRA_SUBJECT, subject);
+            intent.putExtra(Intent.EXTRA_TEXT, markdown);
+            
+            startActivity(Intent.createChooser(intent, "Share Notes"));
+        });
     }
 
     /**
@@ -551,7 +612,7 @@ public class SessionDetailFragment extends Fragment implements
     private BroadcastReceiver mPackageChangesReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            updateNotesTab();
+            // Package changes receiver - no longer needed for markdown editor
         }
     };
     /**
@@ -578,6 +639,7 @@ public class SessionDetailFragment extends Fragment implements
                 ScheduleContract.Sessions.SESSION_NOTES_URL,
                 ScheduleContract.Sessions.ROOM_ID,
                 ScheduleContract.Rooms.ROOM_NAME,
+                ScheduleContract.Sessions.SESSION_USER_NOTES,
         };
 
         int BLOCK_START = 0;
@@ -597,6 +659,7 @@ public class SessionDetailFragment extends Fragment implements
         int NOTES_URL = 14;
         int ROOM_ID = 15;
         int ROOM_NAME = 16;
+        int USER_NOTES = 17;
 
         int[] LINKS_INDICES = {
                 SESSION_URL,

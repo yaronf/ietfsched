@@ -106,7 +106,7 @@
         </activity>
 
         <activity android:name="org.ietf.ietfsched.ui.phone.SessionDetailActivity"
-            android:hardwareAccelerated="false"
+            android:hardwareAccelerated="true"
             android:exported="true"
             tools:ignore="Instantiatable">
             <intent-filter tools:ignore="AppLinkUrlError">
