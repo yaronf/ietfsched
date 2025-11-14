@@ -434,7 +434,6 @@ public class SessionDetailFragment extends Fragment implements
             
             @Override
             public void onShareClicked() {
-                // Share button in Vditor toolbar clicked
                 shareNotes();
             }
         });
@@ -508,7 +507,6 @@ public class SessionDetailFragment extends Fragment implements
             ContentValues values = new ContentValues();
             values.put(ScheduleContract.Sessions.SESSION_USER_NOTES, markdown);
             mHandler.startUpdate(mSessionUri, values);
-            Log.d(TAG, "Saved user notes for session: " + mSessionId);
         });
     }
 

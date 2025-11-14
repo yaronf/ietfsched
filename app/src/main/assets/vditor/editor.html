@@ -26,10 +26,12 @@
         /* Compact styling for mobile */
         .vditor {
             font-size: 13px !important;
+            font-family: Roboto, 'Helvetica Neue', Arial, sans-serif !important;
         }
         .vditor-wysiwyg {
             font-size: 13px !important;
-            line-height: 1.5 !important;
+            line-height: 1.3 !important;
+            font-family: Roboto, 'Helvetica Neue', Arial, sans-serif !important;
         }
         /* Reduce heading sizes */
         .vditor-wysiwyg h1 { font-size: 1.3em !important; }
@@ -113,18 +115,47 @@
                     emojiPath: ''
                 },
                 after: () => {
-                    // Editor ready notification
+                    // Remove keyboard shortcuts from heading buttons when panel appears
+                    const cleanShortcuts = (panel) => {
+                        const buttons = panel.querySelectorAll('button[data-tag]');
+                        buttons.forEach((btn) => {
+                            const text = btn.textContent || '';
+                            const shortcutIndex = text.indexOf('<');
+                            if (shortcutIndex > 0) {
+                                btn.textContent = text.substring(0, shortcutIndex).trim();
+                            }
+                        });
+                    };
+                    
+                    // Watch for headings panel to become visible
+                    const observer = new MutationObserver((mutations) => {
+                        mutations.forEach((mutation) => {
+                            if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+                                const panel = mutation.target;
+                                if (panel.classList.contains('vditor-hint') && 
+                                    panel.style.display === 'block') {
+                                    cleanShortcuts(panel);
+                                }
+                            }
+                        });
+                    });
+                    
+                    // Observe all hint panels
+                    setTimeout(() => {
+                        document.querySelectorAll('.vditor-hint').forEach(panel => {
+                            observer.observe(panel, { attributes: true, attributeFilter: ['style'] });
+                        });
+                    }, 500);
+                    
                     if (window.Android) {
                         window.Android.onEditorReady();
                     }
                     
-                    // Focus the editor
                     setTimeout(() => {
                         vditor.focus();
                     }, 300);
                 },
                 input: (value) => {
-                    // Content change notification
                     if (window.Android) {
                         window.Android.onContentChanged();
                     }
@@ -146,7 +177,6 @@
                 initWithHeader: function(area, group) {
                     const header = '# ' + area + ' ' + group + '\n\n';
                     vditor.setValue(header);
-                    // Move cursor to end
                     setTimeout(() => {
                         vditor.focus();
                     }, 100);

@@ -89,7 +89,6 @@ public class MarkdownEditorWebView extends WebView {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 Log.d(TAG, "Editor loaded");
-                // Focus the editor after loading
                 view.loadUrl("javascript:if(typeof vditor !== 'undefined') { vditor.focus(); }");
             }
         });
