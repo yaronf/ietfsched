@@ -102,6 +102,18 @@ public class SessionDetailFragment extends Fragment implements
     private MarkdownEditorWebView mMarkdownEditor;
     private String mUserNotes;
     private boolean mEditorInitialized = false;
+    
+    // Auto-save
+    private static final int AUTO_SAVE_INTERVAL_MS = 30000; // 30 seconds
+    private final android.os.Handler mAutoSaveHandler = new android.os.Handler();
+    private final Runnable mAutoSaveRunnable = new Runnable() {
+        @Override
+        public void run() {
+            saveUserNotes();
+            // Schedule next auto-save
+            mAutoSaveHandler.postDelayed(this, AUTO_SAVE_INTERVAL_MS);
+        }
+    };
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -131,13 +143,20 @@ public class SessionDetailFragment extends Fragment implements
         filter.addAction(Intent.ACTION_PACKAGE_REPLACED);
         filter.addDataScheme("package");
         getActivity().registerReceiver(mPackageChangesReceiver, filter);
+        
+        // Resume auto-save if editor is initialized
+        if (mEditorInitialized) {
+            startAutoSave();
+        }
     }
 
     @Override
     public void onPause() {
         super.onPause();
         getActivity().unregisterReceiver(mPackageChangesReceiver);
-        // Auto-save notes
+        // Stop auto-save timer
+        stopAutoSave();
+        // Final save on pause
         saveUserNotes();
     }
 
@@ -425,6 +444,8 @@ public class SessionDetailFragment extends Fragment implements
             public void onEditorReady() {
                 mEditorInitialized = true;
                 initializeNotesContent();
+                // Start auto-save timer
+                startAutoSave();
             }
             
             @Override
@@ -508,6 +529,21 @@ public class SessionDetailFragment extends Fragment implements
             values.put(ScheduleContract.Sessions.SESSION_USER_NOTES, markdown);
             mHandler.startUpdate(mSessionUri, values);
         });
+    }
+    
+    /**
+     * Start auto-save timer (saves every 30 seconds).
+     */
+    private void startAutoSave() {
+        stopAutoSave(); // Cancel any existing timer first
+        mAutoSaveHandler.postDelayed(mAutoSaveRunnable, AUTO_SAVE_INTERVAL_MS);
+    }
+    
+    /**
+     * Stop auto-save timer.
+     */
+    private void stopAutoSave() {
+        mAutoSaveHandler.removeCallbacks(mAutoSaveRunnable);
     }
 
     /**
