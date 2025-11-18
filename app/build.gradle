@@ -11,7 +11,8 @@ android {
         release {
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
-            // signingConfig signingConfigs.release  // Commented out - no signing config defined
+            // TODO: Uncomment when signing config is added:
+            // signingConfig signingConfigs.release
         }
     }
     productFlavors {
@@ -31,6 +32,8 @@ android {
 
 dependencies {
     implementation 'androidx.legacy:legacy-support-v4:1.0.0'
-    implementation "io.noties.markwon:core:4.2.0"
+    implementation("io.noties.markwon:core:4.2.0") {
+        exclude group: 'com.atlassian.commonmark', module: 'commonmark'
+    }
     implementation "org.commonmark:commonmark:0.21.0"
 }
