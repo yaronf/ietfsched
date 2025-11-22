@@ -24,7 +24,9 @@ import org.ietf.ietfsched.ui.tablet.ScheduleMultiPaneActivity;
 import org.ietf.ietfsched.util.UIUtils;
 
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.os.Bundle;
+import android.util.Log;
 import androidx.fragment.app.Fragment;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -32,12 +34,15 @@ import android.view.ViewGroup;
 import android.widget.Toast;
 
 public class DashboardFragment extends Fragment {
+    private static final String TAG = "DashboardFragment";
+    
     public void fireTrackerEvent(String label) {
         // Placeholder for analytics tracking
     }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        Log.d(TAG, "onCreateView called");
         View root = inflater.inflate(R.layout.fragment_dashboard, container);
 
 		
@@ -90,6 +95,29 @@ public class DashboardFragment extends Fragment {
                         startActivity(new Intent(getActivity(), WellNoteActivity.class));
                     }
                 });
+        
+        root.findViewById(R.id.home_btn_support).setOnClickListener(
+                new View.OnClickListener() {
+                    public void onClick(View view) {
+                        fireTrackerEvent("Support");
+                        // TODO: Add support activity/intent here
+                        Toast.makeText(getActivity(), "Support", Toast.LENGTH_SHORT).show();
+                    }
+                });
+        Log.d(TAG, "onCreateView completed, root view: " + root);
         return root;
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        Log.d(TAG, "onConfigurationChanged called, orientation: " + newConfig.orientation);
+        View root = getView();
+        if (root != null) {
+            Log.d(TAG, "Requesting layout for root view");
+            root.requestLayout();
+        } else {
+            Log.w(TAG, "Root view is null in onConfigurationChanged");
+        }
     }
 }

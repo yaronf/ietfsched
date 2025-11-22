@@ -18,6 +18,7 @@ package org.ietf.ietfsched.ui.widget;
 
 import android.content.Context;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -26,7 +27,7 @@ import android.view.ViewGroup;
  * vertical whitespace.
  */
 public class DashboardLayout extends ViewGroup {
-
+    private static final String TAG = "DashboardLayout";
     private static final int UNEVEN_GRID_PENALTY_MULTIPLIER = 10;
 
     private int mMaxChildWidth = 0;
@@ -67,7 +68,10 @@ public class DashboardLayout extends ViewGroup {
 
             mMaxChildWidth = Math.max(mMaxChildWidth, child.getMeasuredWidth());
             mMaxChildHeight = Math.max(mMaxChildHeight, child.getMeasuredHeight());
+            Log.d(TAG, "Child " + i + " measured: " + child.getMeasuredWidth() + "x" + child.getMeasuredHeight());
         }
+        
+        Log.d(TAG, "Max child size: " + mMaxChildWidth + "x" + mMaxChildHeight + ", available space: " + MeasureSpec.getSize(widthMeasureSpec) + "x" + MeasureSpec.getSize(heightMeasureSpec));
 
         // Measure again for each child to be exactly the same size.
 
@@ -94,6 +98,7 @@ public class DashboardLayout extends ViewGroup {
     protected void onLayout(boolean changed, int l, int t, int r, int b) {
         int width = r - l;
         int height = b - t;
+        Log.d(TAG, "onLayout called: changed=" + changed + ", width=" + width + ", height=" + height);
 
         final int count = getChildCount();
 
@@ -122,6 +127,7 @@ public class DashboardLayout extends ViewGroup {
 
         int cols = 1;
         int rows;
+        int bestCols = -1; // Track best cols separately, -1 means none found yet
 
         while (true) {
             rows = (visibleCount - 1) / cols + 1;
@@ -133,27 +139,67 @@ public class DashboardLayout extends ViewGroup {
             if (rows * cols != visibleCount) {
                 spaceDifference *= UNEVEN_GRID_PENALTY_MULTIPLIER;
             }
+            // Heavily penalize layouts that don't fit (negative spacing)
+            boolean fits = (hSpace >= 0 && vSpace >= 0);
+            if (!fits) {
+                spaceDifference = Integer.MAX_VALUE;
+            }
 
-            if (spaceDifference < bestSpaceDifference) {
-                // Found a better whitespace squareness/ratio
-                bestSpaceDifference = spaceDifference;
+            // Prefer more square-like grids (rows ≈ cols) by giving a bonus
+            // Calculate how "square" this grid is (closer to 1.0 is better)
+            float aspectRatio = (float) Math.max(cols, rows) / Math.min(cols, rows);
+            // Bonus: reduce spaceDifference for more square grids (divide by aspect ratio)
+            // This means a 2x3 grid (aspectRatio=1.5) gets a smaller penalty than 1x5 (aspectRatio=5.0)
+            int adjustedSpaceDifference = (int) (spaceDifference / aspectRatio);
+            
+            // Add penalty for single-column layouts when there are more than 3 items
+            // This encourages multi-column layouts for better visual balance
+            if (cols == 1 && visibleCount > 3) {
+                adjustedSpaceDifference += 1000; // Large penalty to discourage single column
+            }
+            
+            Log.d(TAG, "Trying cols=" + cols + ", rows=" + rows + ", hSpace=" + hSpace + ", vSpace=" + vSpace + ", spaceDifference=" + spaceDifference + ", adjustedSpaceDifference=" + adjustedSpaceDifference + ", aspectRatio=" + aspectRatio + ", bestSpaceDifference=" + bestSpaceDifference + ", fits=" + fits);
+
+            if (fits && (bestCols == -1 || adjustedSpaceDifference < bestSpaceDifference)) {
+                // Found a better whitespace squareness/ratio that actually fits
+                bestSpaceDifference = adjustedSpaceDifference;
+                bestCols = cols; // Remember this as the best so far
 
                 // If we found a better whitespace squareness and there's only 1 row, this is
                 // the best we can do.
                 if (rows == 1) {
+                    Log.d(TAG, "Breaking because rows==1");
                     break;
                 }
-            } else {
-                // This is a worse whitespace ratio, use the previous value of cols and exit.
-                --cols;
-                rows = (visibleCount - 1) / cols + 1;
-                hSpace = ((width - mMaxChildWidth * cols) / (cols + 1));
-                vSpace = ((height - mMaxChildHeight * rows) / (rows + 1));
-                break;
             }
 
             ++cols;
+            // Safety: don't try more columns than we have items
+            if (cols > visibleCount) {
+                Log.d(TAG, "Breaking because cols > visibleCount");
+                break;
+            }
+            
+            // Also break if we've tried enough columns (e.g., more than sqrt of visibleCount * 2)
+            if (cols > Math.sqrt(visibleCount) * 2 + 1) {
+                Log.d(TAG, "Breaking because cols too high");
+                break;
+            }
         }
+        
+        // Use bestCols if we found one that fits, otherwise fallback to 1
+        if (bestCols == -1) {
+            Log.w(TAG, "No fitting layout found, using cols=1 as fallback");
+            bestCols = 1;
+        }
+        cols = bestCols;
+
+        // Recalculate spacing for final cols/rows to ensure we have correct values
+        rows = (visibleCount - 1) / cols + 1;
+        hSpace = ((width - mMaxChildWidth * cols) / (cols + 1));
+        vSpace = ((height - mMaxChildHeight * rows) / (rows + 1));
+
+        Log.d(TAG, "Grid calculation: cols=" + cols + ", rows=" + rows + ", visibleCount=" + visibleCount + ", hSpace=" + hSpace + ", vSpace=" + vSpace + ", mMaxChildWidth=" + mMaxChildWidth + ", mMaxChildHeight=" + mMaxChildHeight + ", width=" + width + ", height=" + height);
 
         // Lay out children based on calculated best-fit number of rows and cols.
 
@@ -162,6 +208,9 @@ public class DashboardLayout extends ViewGroup {
         vSpace = Math.max(0, vSpace);
 
         // Re-use width/height variables to be child width/height.
+        // Ensure we don't divide by zero
+        if (cols == 0) cols = 1;
+        if (rows == 0) rows = 1;
         width = (width - hSpace * (cols + 1)) / cols;
         height = (height - vSpace * (rows + 1)) / rows;
 
