@@ -54,7 +54,7 @@ public class DashboardLayout extends ViewGroup {
         int childWidthMeasureSpec = MeasureSpec.makeMeasureSpec(
                 MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.AT_MOST);
         int childHeightMeasureSpec = MeasureSpec.makeMeasureSpec(
-                MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.AT_MOST);
+                MeasureSpec.getSize(heightMeasureSpec), MeasureSpec.AT_MOST);
 
         final int count = getChildCount();
         for (int i = 0; i < count; i++) {
@@ -85,9 +85,15 @@ public class DashboardLayout extends ViewGroup {
             child.measure(childWidthMeasureSpec, childHeightMeasureSpec);
         }
 
+        // Measure the total space needed for the grid layout
+        // Use available space, ensuring we request enough for a reasonable grid
+        int availableWidth = MeasureSpec.getSize(widthMeasureSpec);
+        int availableHeight = MeasureSpec.getSize(heightMeasureSpec);
+        
+        // Request the full available space so the grid can layout properly
         setMeasuredDimension(
-                resolveSize(mMaxChildWidth, widthMeasureSpec),
-                resolveSize(mMaxChildHeight, heightMeasureSpec));
+                resolveSize(availableWidth, widthMeasureSpec),
+                resolveSize(availableHeight, heightMeasureSpec));
     }
 
     @Override
@@ -123,37 +129,63 @@ public class DashboardLayout extends ViewGroup {
         int cols = 1;
         int rows;
 
+        int bestCols = 1;
         while (true) {
             rows = (visibleCount - 1) / cols + 1;
 
             hSpace = ((width - mMaxChildWidth * cols) / (cols + 1));
             vSpace = ((height - mMaxChildHeight * rows) / (rows + 1));
 
+            // Skip layouts that don't fit (negative spacing)
+            if (hSpace < 0 || vSpace < 0) {
+                ++cols;
+                if (cols > visibleCount) {
+                    break;
+                }
+                continue;
+            }
+
             spaceDifference = Math.abs(vSpace - hSpace);
             if (rows * cols != visibleCount) {
                 spaceDifference *= UNEVEN_GRID_PENALTY_MULTIPLIER;
+            }
+            
+            // Prefer square grids (2x2 over 1x4, 3x3 over 1x9, etc.)
+            // Penalize single-column layouts when there are 4+ items
+            if (cols == 1 && visibleCount >= 4) {
+                spaceDifference += 1000; // Large penalty
+            }
+            
+            // Prefer grids where rows ≈ cols (more square)
+            float aspectRatio = (float) Math.max(cols, rows) / Math.min(cols, rows);
+            if (aspectRatio > 2.0f) {
+                spaceDifference += 500; // Penalty for very rectangular grids
             }
 
             if (spaceDifference < bestSpaceDifference) {
                 // Found a better whitespace squareness/ratio
                 bestSpaceDifference = spaceDifference;
+                bestCols = cols;
 
                 // If we found a better whitespace squareness and there's only 1 row, this is
                 // the best we can do.
                 if (rows == 1) {
                     break;
                 }
-            } else {
-                // This is a worse whitespace ratio, use the previous value of cols and exit.
-                --cols;
-                rows = (visibleCount - 1) / cols + 1;
-                hSpace = ((width - mMaxChildWidth * cols) / (cols + 1));
-                vSpace = ((height - mMaxChildHeight * rows) / (rows + 1));
-                break;
             }
 
             ++cols;
+            // Don't try more columns than items
+            if (cols > visibleCount) {
+                break;
+            }
         }
+        
+        // Use the best columns found
+        cols = bestCols;
+        rows = (visibleCount - 1) / cols + 1;
+        hSpace = ((width - mMaxChildWidth * cols) / (cols + 1));
+        vSpace = ((height - mMaxChildHeight * rows) / (rows + 1));
 
         // Lay out children based on calculated best-fit number of rows and cols.
 
