@@ -195,7 +195,16 @@ public class MeetingDetector {
             }
             
             JSONObject agenda = new JSONObject(jsonStr);
-            
+
+            JSONArray schedule = agenda.optJSONArray("schedule");
+            if (schedule != null) {
+                if (schedule.length() == 0) {
+                    Log.w(TAG, "Agenda at " + agendaUrl + ": schedule array is empty");
+                    return false;
+                }
+                return true;
+            }
+
             if (agenda.length() == 0) {
                 Log.w(TAG, "Agenda at " + agendaUrl + ": empty JSON object");
                 return false;

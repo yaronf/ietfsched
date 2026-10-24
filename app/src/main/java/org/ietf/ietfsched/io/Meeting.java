@@ -59,6 +59,10 @@ class Meeting {
 	String group = "Unknown"; // APP
 	String area = "Unknown"; // apparea
 	String typeSession; // Morning Session I
+	/** Timeslot type from agenda-data (regular, break, other, plenary, reg, lead). Null for legacy agenda.json. */
+	String slotType;
+	/** Session purpose from agenda-data (regular, social, coding, …). Null for legacy agenda.json. */
+	String purpose;
 	String key; // unique identifier
 	String[] slides; // The list of slides urls.
 	String[] drafts; // The list of Internet drafts (stored as "draft-name|||url", where draft-name is the raw identifier like "draft-ietf-6man-enhanced-vpn-vtn-id")
@@ -77,6 +81,69 @@ class Meeting {
 		jsonDate.setTimeZone((UIUtils.AGENDA_TIME_ZONE));
 		// Note: afterFormat is ParserUtils.df, which gets its timezone set by
 		// ParserUtils static initializer and updated by ParserUtils.updateTimezone()
+	}
+
+	private Meeting() {}
+
+	/**
+	 * One row of {@code /api/meeting/{n}/agenda-data} {@code schedule[]}.
+	 * Fills the same fields the legacy agenda.json constructor fills, so inserts
+	 * stay compatible with the existing sessions/blocks schema and session ids.
+	 */
+	static Meeting fromAgendaData(JSONObject item) throws UnScheduledMeetingException, Exception {
+		Meeting m = new Meeting();
+		String status = item.optString("status", "nostatus");
+		String label = item.optString("name", "");
+		if (label.isEmpty()) {
+			label = item.optString("groupName", item.optString("acronym", "session"));
+		}
+		if (status.equals("canceled") || status.equals("resched") || status.equals("deleted")) {
+			throw new UnScheduledMeetingException(
+					String.format(Locale.ROOT, "Unscheduled meeting(%s) status: %s", label, status));
+		}
+		int sessionId = item.optInt("sessionId", -1);
+		if (sessionId < 0) {
+			throw new UnScheduledMeetingException("Missing sessionId for " + label);
+		}
+		String startRaw = item.optString("startDateTime", "");
+		double durationSec = item.optDouble("duration", 0);
+		if (startRaw.isEmpty() || durationSec <= 0) {
+			throw new UnScheduledMeetingException("Missing time for " + label);
+		}
+		OffsetDateTime start = OffsetDateTime.parse(startRaw);
+		Date startDate = Date.from(start.toInstant());
+		Date endDate = Date.from(start.plusSeconds((long) durationSec).toInstant());
+		m.startHour = afterFormat.format(startDate);
+		m.endHour = afterFormat.format(endDate);
+		m.title = label;
+		m.typeSession = "session";
+		m.slotType = item.optString("type", "");
+		m.purpose = item.optString("purpose", "");
+		m.location = item.optString("room", "N/A");
+		m.key = String.format(Locale.ROOT, "%d", sessionId);
+		m.sessionResUri = "/api/v1/meeting/session/" + sessionId + "/";
+		m.isBof = item.optBoolean("isBoF", false);
+		m.hrefDetail = "";
+		JSONObject agenda = item.optJSONObject("agenda");
+		if (agenda != null) {
+			String url = agenda.optString("url", "");
+			if (!url.isEmpty() && !"null".equals(url)) {
+				m.hrefDetail = url;
+			}
+		}
+		m.group = item.optString("groupAcronym", "Unknown");
+		if (m.group.isEmpty()) {
+			m.group = "Unknown";
+		}
+		JSONObject parent = item.optJSONObject("groupParent");
+		m.area = parent != null ? parent.optString("acronym", "Unknown") : "Unknown";
+		if (m.area.isEmpty()) {
+			m.area = "Unknown";
+		}
+		if ("Unknown".equals(m.group)) {
+			m.group = m.title;
+		}
+		return m;
 	}
 
 	// Handle parsing each line of the agenda.

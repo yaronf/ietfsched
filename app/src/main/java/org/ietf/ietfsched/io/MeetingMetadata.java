@@ -78,7 +78,7 @@ public class MeetingMetadata {
         }
         
         String name = "IETF " + number;
-        String agendaUrl = "https://datatracker.ietf.org/meeting/" + number + "/agenda.json";
+        String agendaUrl = "https://datatracker.ietf.org/api/meeting/" + number + "/agenda-data";
         
         return new MeetingMetadata(number, name, city, country, tz, 
                                    startMillis, endMillis, agendaUrl, false);

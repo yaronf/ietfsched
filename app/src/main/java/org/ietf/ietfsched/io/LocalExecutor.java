@@ -127,7 +127,8 @@ public class LocalExecutor {
 		for (int i = 0; i < meetings.size(); i++) {
 			Meeting m = meetings.get(i);
 			// Registration is low-value clutter; omit entirely.
-			if (isRegistration(m)) {
+			// agenda-data "reg"/"lead" and all-day coffee carts (type other) are the same kind of clutter.
+			if (isRegistration(m) || isOmittedFromSchedule(m)) {
 				continue;
 			}
 			ContentProviderOperation cp = createBlock(m, versionBuild); 
@@ -160,6 +161,52 @@ public class LocalExecutor {
 		String titleLower = m.title.toLowerCase(Locale.ROOT);
 		return m.typeSession.contains("Registration") || titleLower.contains("registration");
 	}
+
+	/**
+	 * Items that should not become schedule rows. Session ids are unchanged for
+	 * everything we do keep; these are simply not inserted.
+	 */
+	private static boolean isOmittedFromSchedule(Meeting m) {
+		if (m.slotType == null || m.slotType.isEmpty()) {
+			return false;
+		}
+		if ("reg".equals(m.slotType) || "lead".equals(m.slotType)) {
+			return true;
+		}
+		return "other".equals(m.slotType)
+				&& m.title.toLowerCase(Locale.ROOT).contains("coffee cart");
+	}
+
+	/**
+	 * Map agenda-data type/purpose onto the existing block-type columns.
+	 * Does not add columns. Regular sessions stay red; breaks and socials stay blue;
+	 * office hours, tutorials, and open meetings stay yellow.
+	 */
+	private String classifyAgendaDataBlock(Meeting m, String titleLower) {
+		String type = m.slotType;
+		String purpose = m.purpose == null ? "" : m.purpose;
+		if ("break".equals(type) || "plenary".equals(type)) {
+			return ParserUtils.BLOCK_TYPE_FOOD;
+		}
+		if ("other".equals(type)) {
+			if ("coding".equals(purpose)) {
+				if (titleLower.contains("hackathon")
+						&& !titleLower.contains("results")
+						&& !titleLower.contains("presentations")) {
+					return ParserUtils.BLOCK_TYPE_HACKATHON;
+				}
+				if (containsAny(titleLower, "happy hour", "reception", "social")) {
+					return ParserUtils.BLOCK_TYPE_FOOD;
+				}
+				return ParserUtils.BLOCK_TYPE_NOC_HELPDESK;
+			}
+			if ("social".equals(purpose)) {
+				return ParserUtils.BLOCK_TYPE_FOOD;
+			}
+			return ParserUtils.BLOCK_TYPE_NOC_HELPDESK;
+		}
+		return ParserUtils.BLOCK_TYPE_SESSION;
+	}
 	
 	private ContentProviderOperation createBlock(Meeting m, long versionBuild) throws Exception {
 		final ContentProviderOperation.Builder builder = ContentProviderOperation.newInsert(Blocks.CONTENT_URI);
@@ -185,11 +232,16 @@ public class LocalExecutor {
 		sessionType = m.typeSession.toLowerCase(Locale.ROOT);
 		String titleLower = m.title.toLowerCase(Locale.ROOT);
 
+		if (m.slotType != null && !m.slotType.isEmpty()) {
+			blockType = classifyAgendaDataBlock(m, titleLower);
+			if (ParserUtils.BLOCK_TYPE_SESSION.equals(blockType) && isInSessionTimesMap(startTime)) {
+				title = generateBlockTitle(startTime);
+			}
+		}
 		// Based on rough parsing of the agenda elements assign block TYPE.
 		// Check specific types FIRST before the generic "session" check
-		
-		// Check title-based patterns first (these are most specific)
-		if (titleLower.contains("break")) {
+		// Legacy agenda.json path (no slot type).
+		else if (titleLower.contains("break")) {
 			blockType = ParserUtils.BLOCK_TYPE_FOOD;
 			title = m.title;
 		}
@@ -305,7 +357,11 @@ public class LocalExecutor {
 		final int MIN_PARALLEL_MEETINGS = 2;
 		
 		for (Meeting m : meetings) {
-			if (!m.typeSession.toLowerCase(Locale.ROOT).contains("session")) {
+			if (m.slotType != null && !m.slotType.isEmpty()) {
+				if (!"regular".equals(m.slotType)) {
+					continue;
+				}
+			} else if (!m.typeSession.toLowerCase(Locale.ROOT).contains("session")) {
 				continue;
 			}
 			
@@ -534,25 +590,34 @@ public class LocalExecutor {
 
 
 	// decode, decodes the JSON content from the origin (datatracker).
+	// agenda-data uses a "schedule" array; legacy agenda.json is { "<number>": [ ... ] }.
 	private ArrayList<Meeting> decode(final JSONObject jsAgenda) throws IOException {
 		final ArrayList<Meeting> meetings = new ArrayList<>();
-		if (jsAgenda != null) {
-			try {
-			JSONArray jsAgendaArray = jsAgenda.optJSONArray(jsAgenda.keys().next());
-				for (int i = 0; i < jsAgendaArray.length(); i++) {
-					JSONObject mJSON = jsAgendaArray.getJSONObject(i);
-					try {
-						Meeting m = new Meeting(mJSON);
-						meetings.add(m);
-					} catch (UnScheduledMeetingException e) {
-						// Skip unscheduled meetings
-					} catch (Exception e) {
-						e.printStackTrace();
-					}
-				}
-			} catch (final JSONException e) {
-				return null;
+		if (jsAgenda == null) {
+			return meetings;
+		}
+		try {
+			JSONArray jsAgendaArray = jsAgenda.optJSONArray("schedule");
+			boolean agendaData = jsAgendaArray != null;
+			if (!agendaData) {
+				jsAgendaArray = jsAgenda.optJSONArray(jsAgenda.keys().next());
 			}
+			if (jsAgendaArray == null) {
+				return meetings;
+			}
+			for (int i = 0; i < jsAgendaArray.length(); i++) {
+				JSONObject mJSON = jsAgendaArray.getJSONObject(i);
+				try {
+					Meeting m = agendaData ? Meeting.fromAgendaData(mJSON) : new Meeting(mJSON);
+					meetings.add(m);
+				} catch (UnScheduledMeetingException e) {
+					// Skip unscheduled meetings
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+		} catch (final JSONException e) {
+			return null;
 		}
 		return meetings;
 	}
